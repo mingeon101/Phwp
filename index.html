@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF → HWP 변환기</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #1e1e2e;
+    --accent: #6c63ff;
+    --accent2: #ff6b6b;
+    --text: #e8e8f0;
+    --muted: #6b6b8a;
+    --success: #4ade80;
+    --error: #f87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Serif KR', serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(108,99,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(108,99,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 400px;
+    background: radial-gradient(ellipse, rgba(108,99,255,0.15) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 680px;
+    padding: 2rem;
+  }
+  .header { text-align: center; margin-bottom: 3rem; }
+  .badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    border: 1px solid rgba(108,99,255,0.3);
+    padding: 0.3em 1em;
+    border-radius: 100px;
+    margin-bottom: 1.5rem;
+    background: rgba(108,99,255,0.05);
+  }
+  h1 {
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-weight: 900;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 1rem;
+  }
+  h1 .pdf { color: var(--accent2); }
+  h1 .arrow { color: var(--muted); margin: 0 0.3em; }
+  h1 .hwp { color: var(--accent); }
+  .subtitle { color: var(--muted); font-size: 0.95rem; line-height: 1.7; }
+
+  /* API 설정 */
+  .api-config {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .api-config label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .api-config input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4em 0.75em;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .api-config input:focus { border-color: var(--accent); }
+  .api-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .api-status.ok { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .api-status.err { background: var(--error); box-shadow: 0 0 6px var(--error); }
+
+  /* 드롭존 */
+  .drop-zone {
+    border: 1.5px dashed rgba(108,99,255,0.4);
+    border-radius: 16px;
+    padding: 3.5rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    background: rgba(108,99,255,0.03);
+    position: relative;
+    overflow: hidden;
+  }
+  .drop-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(108,99,255,0.08) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent);
+    background: rgba(108,99,255,0.07);
+  }
+  .drop-zone:hover::before, .drop-zone.dragover::before { opacity: 1; }
+  .drop-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    display: block;
+    filter: drop-shadow(0 0 20px rgba(108,99,255,0.5));
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  .drop-text { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .drop-subtext { font-size: 0.85rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  #file-input { display: none; }
+
+  .file-info {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.2rem 1.5rem;
+    margin-top: 1.5rem;
+    align-items: center;
+    gap: 1rem;
+  }
+  .file-info.visible { display: flex; }
+  .file-icon { font-size: 2rem; flex-shrink: 0; }
+  .file-details { flex: 1; min-width: 0; }
+  .file-name { font-weight: 700; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.2rem; }
+  .file-meta { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--muted); }
+  .remove-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; padding: 0.3rem; border-radius: 6px; transition: color 0.2s, background 0.2s; }
+  .remove-btn:hover { color: var(--error); background: rgba(248,113,113,0.1); }
+
+  .convert-btn {
+    width: 100%;
+    margin-top: 1.5rem;
+    padding: 1rem 2rem;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-family: 'Noto Serif KR', serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(108,99,255,0.3);
+  }
+  .convert-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(108,99,255,0.4); }
+  .convert-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .progress-area { display: none; margin-top: 1.5rem; }
+  .progress-area.visible { display: block; }
+  .progress-label { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.5rem; font-family: 'JetBrains Mono', monospace; }
+  .progress-status { color: var(--accent); }
+  .progress-pct { color: var(--muted); }
+  .progress-bar-bg { height: 4px; background: var(--border); border-radius: 100px; overflow: hidden; }
+  .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), #8b5cf6); border-radius: 100px; transition: width 0.4s ease; box-shadow: 0 0 10px rgba(108,99,255,0.6); width: 0%; }
+
+  .result { display: none; margin-top: 1.5rem; border-radius: 12px; padding: 1.2rem 1.5rem; border: 1px solid; }
+  .result.success { display: flex; align-items: center; gap: 1rem; background: rgba(74,222,128,0.05); border-color: rgba(74,222,128,0.3); }
+  .result.error { display: block; background: rgba(248,113,113,0.05); border-color: rgba(248,113,113,0.3); }
+  .result-icon { font-size: 1.5rem; flex-shrink: 0; }
+  .result-body { flex: 1; }
+  .result-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.3rem; color: var(--success); }
+  .result.error .result-title { color: var(--error); }
+  .result-meta { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--muted); }
+  .download-btn {
+    flex-shrink: 0;
+    padding: 0.6rem 1.2rem;
+    background: rgba(74,222,128,0.15);
+    border: 1px solid rgba(74,222,128,0.4);
+    border-radius: 8px;
+    color: var(--success);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+  }
+  .download-btn:hover { background: rgba(74,222,128,0.25); }
+
+  .info-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 2rem; }
+  .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; }
+  .info-card-icon { font-size: 1.4rem; margin-bottom: 0.4rem; display: block; }
+  .info-card-title { font-size: 0.8rem; font-weight: 700; margin-bottom: 0.2rem; }
+  .info-card-desc { font-size: 0.72rem; color: var(--muted); line-height: 1.5; font-family: 'JetBrains Mono', monospace; }
+
+  .footer { margin-top: 2.5rem; text-align: center; font-size: 0.75rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; line-height: 2; }
+  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 0.5em; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 500px) { .info-cards { grid-template-columns: 1fr; } h1 { font-size: 1.8rem; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="badge">HWP 5.0 Document File Format</div>
+    <h1><span class="pdf">PDF</span><span class="arrow">→</span><span class="hwp">HWP</span></h1>
+    <p class="subtitle">PDF 문서를 한글 워드프로세서(.hwp) 형식으로 변환합니다.<br>텍스트 추출 후 HWP 5.0 바이너리 포맷으로 직접 생성합니다.</p>
+  </header>
+
+  <!-- API URL 설정 -->
+  <div class="api-config">
+    <label>API URL</label>
+    <input type="text" id="api-url" placeholder="https://your-app.onrender.com">
+    <div class="api-status" id="api-status" title="연결 상태"></div>
+  </div>
+
+  <!-- 드롭존 -->
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" accept=".pdf">
+    <span class="drop-icon">📄</span>
+    <div class="drop-text">PDF 파일을 여기에 드래그하거나 클릭하여 선택</div>
+    <div class="drop-subtext">최대 50MB · PDF 형식만 지원</div>
+  </div>
+
+  <div class="file-info" id="file-info">
+    <span class="file-icon">📑</span>
+    <div class="file-details">
+      <div class="file-name" id="file-name">-</div>
+      <div class="file-meta" id="file-meta">-</div>
+    </div>
+    <button class="remove-btn" id="remove-btn">✕</button>
+  </div>
+
+  <button class="convert-btn" id="convert-btn" disabled>HWP로 변환하기</button>
+
+  <div class="progress-area" id="progress-area">
+    <div class="progress-label">
+      <span class="progress-status" id="progress-status">변환 중...</span>
+      <span class="progress-pct" id="progress-pct">0%</span>
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+  </div>
+
+  <div class="result" id="result">
+    <span class="result-icon" id="result-icon">✅</span>
+    <div class="result-body">
+      <div class="result-title" id="result-title">변환 완료!</div>
+      <div class="result-meta" id="result-meta"></div>
+    </div>
+    <a class="download-btn" id="download-link" href="#" download>⬇ 다운로드</a>
+  </div>
+
+  <div class="info-cards">
+    <div class="info-card"><span class="info-card-icon">🔒</span><div class="info-card-title">프라이버시</div><div class="info-card-desc">파일은 서버에 저장되지 않음</div></div>
+    <div class="info-card"><span class="info-card-icon">📝</span><div class="info-card-title">텍스트 추출</div><div class="info-card-desc">pdfplumber로 정확한 텍스트 추출</div></div>
+    <div class="info-card"><span class="info-card-icon">🗂</span><div class="info-card-title">HWP 5.0</div><div class="info-card-desc">바이너리 포맷 직접 생성</div></div>
+  </div>
+
+  <div class="footer">
+    <div>백엔드: <a href="https://render.com" target="_blank">Render.com</a> 무료 플랜 · 프론트엔드: <a href="https://pages.github.com" target="_blank">GitHub Pages</a></div>
+    <div>HWP Document File Format 5.0 Revision 1.3 기반 구현</div>
+  </div>
+</div>
+
+<script>
+// ── 백엔드 URL 자동 감지 ──
+// config.js 가 있으면 거기서 읽고, 없으면 localStorage, 없으면 빈 값
+const API_URL_KEY = 'pdf2hwp_api_url';
+const apiInput = document.getElementById('api-url');
+const apiStatus = document.getElementById('api-status');
+
+function getApiUrl() {
+  return (apiInput.value || '').replace(/\/$/, '').trim();
+}
+
+// localStorage에서 복원
+const saved = localStorage.getItem(API_URL_KEY);
+if (saved) apiInput.value = saved;
+
+// window.PDF2HWP_API_URL 가 있으면 (config.js) 우선 사용
+if (window.PDF2HWP_API_URL) apiInput.value = window.PDF2HWP_API_URL;
+
+let healthTimer = null;
+async function checkHealth() {
+  const url = getApiUrl();
+  if (!url) { apiStatus.className = 'api-status'; return; }
+  try {
+    const r = await fetch(url + '/health', { signal: AbortSignal.timeout(5000) });
+    apiStatus.className = r.ok ? 'api-status ok' : 'api-status err';
+  } catch {
+    apiStatus.className = 'api-status err';
+  }
+}
+
+apiInput.addEventListener('input', () => {
+  localStorage.setItem(API_URL_KEY, apiInput.value);
+  clearTimeout(healthTimer);
+  healthTimer = setTimeout(checkHealth, 800);
+});
+
+checkHealth();
+
+// ── 파일 처리 ──
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const fileInfo = document.getElementById('file-info');
+const fileNameEl = document.getElementById('file-name');
+const fileMeta = document.getElementById('file-meta');
+const removeBtn = document.getElementById('remove-btn');
+const convertBtn = document.getElementById('convert-btn');
+const progressArea = document.getElementById('progress-area');
+const progressBar = document.getElementById('progress-bar');
+const progressStatus = document.getElementById('progress-status');
+const progressPct = document.getElementById('progress-pct');
+const result = document.getElementById('result');
+const resultIcon = document.getElementById('result-icon');
+const resultTitle = document.getElementById('result-title');
+const resultMeta = document.getElementById('result-meta');
+const downloadLink = document.getElementById('download-link');
+
+let selectedFile = null;
+
+const fmt = b => b < 1024 ? b+'B' : b < 1048576 ? (b/1024).toFixed(1)+'KB' : (b/1048576).toFixed(1)+'MB';
+
+function setFile(f) {
+  if (!f?.name.toLowerCase().endsWith('.pdf')) return alert('PDF 파일만 가능합니다.');
+  if (f.size > 52428800) return alert('50MB 이하만 가능합니다.');
+  selectedFile = f;
+  fileNameEl.textContent = f.name;
+  fileMeta.textContent = fmt(f.size) + ' · PDF';
+  fileInfo.classList.add('visible');
+  convertBtn.disabled = false;
+  hideResult();
+}
+
+function clearFile() {
+  selectedFile = null;
+  fileInput.value = '';
+  fileInfo.classList.remove('visible');
+  convertBtn.disabled = true;
+  hideResult();
+}
+
+function hideResult() {
+  result.style.display = 'none';
+  result.className = 'result';
+  progressArea.classList.remove('visible');
+  progressBar.style.width = '0%';
+}
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); setFile(e.dataTransfer.files[0]); });
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
+removeBtn.addEventListener('click', clearFile);
+
+convertBtn.addEventListener('click', async () => {
+  const apiUrl = getApiUrl();
+  if (!apiUrl) return alert('API URL을 입력해주세요.\nRender 배포 후 URL을 붙여넣으세요.');
+  if (!selectedFile) return;
+
+  convertBtn.disabled = true;
+  convertBtn.innerHTML = '<span class="spinner"></span>변환 중...';
+  hideResult();
+  progressArea.classList.add('visible');
+
+  let pct = 0;
+  const stages = [
+    { to: 20, msg: 'PDF 파일 읽는 중...' },
+    { to: 50, msg: '텍스트 추출 중...' },
+    { to: 80, msg: 'HWP 레코드 생성 중...' },
+    { to: 95, msg: '파일 패키징 중...' },
+  ];
+  let si = 0;
+  const timer = setInterval(() => {
+    const s = stages[Math.min(si, stages.length-1)];
+    if (pct < s.to) {
+      pct = Math.min(pct+2, s.to);
+      progressBar.style.width = pct+'%';
+      progressStatus.textContent = s.msg;
+      progressPct.textContent = pct+'%';
+    } else if (si < stages.length-1) si++;
+  }, 80);
+
+  try {
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    const res = await fetch(apiUrl + '/convert', { method: 'POST', body: fd });
+    clearInterval(timer);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: '서버 오류' }));
+      throw new Error(err.detail || '변환 실패');
+    }
+
+    progressBar.style.width = '100%';
+    progressStatus.textContent = '완료!';
+    progressPct.textContent = '100%';
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const hwpName = selectedFile.name.replace(/\.pdf$/i, '.hwp');
+    const pages = res.headers.get('X-Pages') || '?';
+
+    result.className = 'result success';
+    resultIcon.textContent = '✅';
+    resultTitle.textContent = '변환 완료!';
+    resultMeta.textContent = `${hwpName}  ·  ${fmt(blob.size)}  ·  ${pages}페이지`;
+    downloadLink.href = url;
+    downloadLink.download = hwpName;
+    downloadLink.style.display = '';
+    result.style.display = 'flex'; // force show
+
+    downloadLink.click();
+  } catch(e) {
+    clearInterval(timer);
+    progressArea.classList.remove('visible');
+    result.className = 'result error';
+    result.style.display = 'block';
+    resultIcon.textContent = '❌';
+    resultTitle.textContent = '변환 실패';
+    resultMeta.textContent = e.message;
+    downloadLink.style.display = 'none';
+  } finally {
+    convertBtn.disabled = false;
+    convertBtn.innerHTML = 'HWP로 변환하기';
+  }
+});
+</script>
+</body>
+</html>

@@ -11,7 +11,12 @@ import pdfplumber
 import struct
 import zlib
 import io
+import traceback
+import logging
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PDF to HWP Converter API")
 
@@ -247,27 +252,40 @@ async def convert(file: UploadFile = File(...)):
     if len(content) > 50 * 1024 * 1024:
         raise HTTPException(400, "50MB 이하 파일만 지원합니다.")
     try:
+        logger.info(f"변환 시작: {file.filename} ({len(content)} bytes)")
+
+        # 1. PDF 텍스트 추출
         pages_text = []
         with pdfplumber.open(io.BytesIO(content)) as pdf:
             total = len(pdf.pages)
-            for page in pdf.pages:
-                pages_text.append(page.extract_text() or "")
+            logger.info(f"PDF 페이지 수: {total}")
+            for i, page in enumerate(pdf.pages):
+                txt = page.extract_text() or ""
+                pages_text.append(txt)
+                logger.info(f"페이지 {i+1}: {len(txt)}자 추출")
 
+        # 2. HWP 본문 레코드 생성
         body = b""
         for i, txt in enumerate(pages_text):
             if txt.strip():
                 body += text_to_para_records(txt)
             if i < len(pages_text) - 1:
                 body += text_to_para_records("")
-
         if not body:
             body = text_to_para_records("(변환된 텍스트 없음)")
+        logger.info(f"본문 레코드: {len(body)} bytes")
 
+        # 3. DocInfo 생성
+        doc_info = make_doc_info()
+        logger.info(f"DocInfo: {len(doc_info)} bytes")
+
+        # 4. CFB 생성
         cfb = CFBWriter()
         cfb.add_stream("FileHeader", make_file_header())
-        cfb.add_stream("DocInfo", zlib.compress(make_doc_info()))
+        cfb.add_stream("DocInfo", zlib.compress(doc_info))
         cfb.add_stream("BodyText/Section0", zlib.compress(body))
         hwp = cfb.build()
+        logger.info(f"HWP 생성 완료: {len(hwp)} bytes")
 
         stem = Path(file.filename).stem
         return StreamingResponse(
@@ -279,5 +297,8 @@ async def convert(file: UploadFile = File(...)):
                 "Access-Control-Expose-Headers": "X-Pages,Content-Disposition",
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(500, f"변환 오류: {e}")
+        logger.error(f"변환 오류:\n{traceback.format_exc()}")
+        raise HTTPException(500, f"변환 오류: {str(e)}")

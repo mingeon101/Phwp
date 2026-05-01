@@ -144,3 +144,46 @@ async def convert(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(500,f"변환 오류: {e}")
+               +struct.pack("<I",0)+struct.pack("<H",0))
+            out+=rec(T+50,0,ph)+rec(T+51,1,sep)+rec(T+52,1,struct.pack("<II",0,0))
+    return out
+
+@app.get("/")
+async def root(): return {"status":"ok","usage":"POST /convert"}
+
+@app.get("/health")
+async def health(): return {"status":"ok"}
+
+@app.post("/convert")
+async def convert(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400,"PDF 파일만 업로드 가능합니다.")
+    content=await file.read()
+    if len(content)>50*1024*1024:
+        raise HTTPException(400,"50MB 이하 파일만 지원합니다.")
+    try:
+        logger.info(f"변환 시작: {file.filename} ({len(content):,}B)")
+        pages=[]
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            total=len(pdf.pages)
+            for i,page in enumerate(pdf.pages):
+                t=page.extract_text() or ""
+                pages.append(t)
+                logger.info(f"  p{i+1}: {len(t)}자")
+        if not any(t.strip() for t in pages):
+            pages=["(이미지 기반 PDF — 텍스트 추출 불가)"]
+
+        di_z=zlib.compress(make_doc_info(),6)
+        bd_z=zlib.compress(make_body(pages),6)
+        hwp=build_cfb(make_file_header(), di_z, bd_z)
+        logger.info(f"HWP 완성: {len(hwp):,}B")
+
+        stem=Path(file.filename).stem
+        cd=f"attachment; filename*=UTF-8''{quote(stem+'.hwp',safe='')}"
+        return StreamingResponse(io.BytesIO(hwp),media_type="application/x-hwp",
+            headers={"Content-Disposition":cd,"X-Pages":str(total),
+                     "Access-Control-Expose-Headers":"X-Pages,Content-Disposition"})
+    except HTTPException: raise
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(500,f"변환 오류: {e}")

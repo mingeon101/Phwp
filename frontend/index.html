@@ -257,9 +257,9 @@
 <body>
 <div class="container">
   <header class="header">
-    <div class="badge">HWP 5.0 Document File Format</div>
+    <div class="badge">HWPX Document File Format</div>
     <h1><span class="pdf">PDF</span><span class="arrow">→</span><span class="hwp">HWP</span></h1>
-    <p class="subtitle">PDF 문서를 한글 워드프로세서(.hwp) 형식으로 변환합니다.<br>텍스트 추출 후 HWP 5.0 바이너리 포맷으로 직접 생성합니다.</p>
+    <p class="subtitle">PDF 문서를 한글 워드프로세서(.hwp) 형식으로 변환합니다.<br>텍스트 추출 후 HWPX 바이너리 포맷으로 직접 생성합니다.</p>
   </header>
 
   <!-- API URL 설정 -->
@@ -286,7 +286,7 @@
     <button class="remove-btn" id="remove-btn">✕</button>
   </div>
 
-  <button class="convert-btn" id="convert-btn" disabled>HWP로 변환하기</button>
+  <button class="convert-btn" id="convert-btn" disabled>HWPX로 변환하기</button>
 
   <div class="progress-area" id="progress-area">
     <div class="progress-label">
@@ -308,7 +308,7 @@
   <div class="info-cards">
     <div class="info-card"><span class="info-card-icon">🔒</span><div class="info-card-title">프라이버시</div><div class="info-card-desc">파일은 서버에 저장되지 않음</div></div>
     <div class="info-card"><span class="info-card-icon">📝</span><div class="info-card-title">텍스트 추출</div><div class="info-card-desc">pdfplumber로 정확한 텍스트 추출</div></div>
-    <div class="info-card"><span class="info-card-icon">🗂</span><div class="info-card-title">HWP 5.0</div><div class="info-card-desc">바이너리 포맷 직접 생성</div></div>
+    <div class="info-card"><span class="info-card-icon">🗂</span><div class="info-card-title">HWPX</div><div class="info-card-desc">바이너리 포맷 직접 생성</div></div>
   </div>
 
   <div class="footer">
@@ -455,7 +455,7 @@ convertBtn.addEventListener('click', async () => {
 
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    const hwpName = selectedFile.name.replace(/\.pdf$/i, '.hwp');
+    const hwpName = selectedFile.name.replace(/\.pdf$/i, '.hwpx');
     const pages = res.headers.get('X-Pages') || '?';
 
     result.className = 'result success';
@@ -479,7 +479,7 @@ convertBtn.addEventListener('click', async () => {
     downloadLink.style.display = 'none';
   } finally {
     convertBtn.disabled = false;
-    convertBtn.innerHTML = 'HWP로 변환하기';
+    convertBtn.innerHTML = 'HWPX로 변환하기';
   }
 });
 </script>
